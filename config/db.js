@@ -60,6 +60,20 @@ db.exec(`
     FOREIGN KEY (payer_id) REFERENCES users(id),
     FOREIGN KEY (payee_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    mode TEXT DEFAULT 'PAIRWISE' -- ADD THIS LINE
+  );
+
+  
 `);
 
 module.exports = db;

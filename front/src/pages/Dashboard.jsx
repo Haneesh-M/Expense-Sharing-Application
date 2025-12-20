@@ -1,123 +1,143 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
-import { Wallet, Clock, CheckCircle, TrendingUp, UserPlus, Users, ArrowRight, Trash2 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { TrendingUp, UserPlus, Users, ArrowRight, Trash2, Check, X, AlertCircle } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const [groups, setGroups] = useState([]);
-  const [settlements, setSettlements] = useState([]);
-  const [allUsers, setAllUsers] = useState([]);
+  const [totalNet, setTotalNet] = useState(0);
   const [newGroupName, setNewGroupName] = useState('');
-  const [stats, setStats] = useState({ totalOwed: 0 });
+  const [showCreateBox, setShowCreateBox] = useState(false);
+  const [selectedMode, setSelectedMode] = useState('PAIRWISE');
+  const [deleteModal, setDeleteModal] = useState({ show: false, gid: null, name: '', canDelete: false });
   const navigate = useNavigate();
-
-  const getName = (id) => allUsers.find(u => u.id === id)?.name || `User ${id}`;
 
   const fetchData = async () => {
     try {
       const [gRes, uRes] = await Promise.all([api.get('/groups'), api.get('/users')]);
       setGroups(gRes.data);
-      setAllUsers(uRes.data);
-
-      let total = 0;
-      let allSets = [];
+      let net = 0;
       for (const g of gRes.data) {
-        const [balRes, setRes] = await Promise.all([
-          api.get(`/groups/${g.id}/balances`),
-          api.get(`/groups/${g.id}/settlements`).catch(() => ({data: []}))
-        ]);
-        balRes.data.balances?.forEach(b => total += b.amount);
-        if (setRes.data) allSets = [...allSets, ...setRes.data];
+        const balRes = await api.get(`/groups/${g.id}/balances`);
+        balRes.data.balances?.forEach(b => net += (b.amount || 0));
       }
-      setStats({ totalOwed: total });
-      setSettlements(allSets.sort((a, b) => b.id - a.id).slice(0, 5));
-    } catch (err) { console.error("Redirect/Data Error:", err); }
+      setTotalNet(net);
+    } catch (err) { console.error(err); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  const handleDeleteGroup = async (groupId, groupName) => {
-    try {
-      const balRes = await api.get(`/groups/${groupId}/balances`);
-      const activeBalances = balRes.data.balances || [];
-
-      if (activeBalances.length > 0) {
-        return alert(`Cannot delete "${groupName}": Some settlements are in due and must be settled first.`);
-      }
-
-      if (window.confirm(`All settlements are done. Do you want to delete "${groupName}"?`)) {
-        await api.delete(`/groups/${groupId}`);
-        fetchData();
-      }
-    } catch (err) { alert("Delete failed. Check backend connectivity."); }
+  const openDeleteModal = async (gid, name) => {
+    const balRes = await api.get(`/groups/${gid}/balances`);
+    const hasDues = balRes.data.balances?.length > 0;
+    setDeleteModal({ show: true, gid, name, canDelete: !hasDues });
   };
 
-  const handleCreateGroup = async (e) => {
-    e.preventDefault();
+  const handleCreateGroup = async () => {
     if (!newGroupName.trim()) return;
-    await api.post('/groups', { name: newGroupName });
-    setNewGroupName('');
-    fetchData();
+    try {
+      await api.post('/groups', { name: newGroupName, mode: selectedMode });
+      setNewGroupName('');
+      setShowCreateBox(false);
+      fetchData();
+    } catch (err) { alert("Delete finance.db and restart server."); }
   };
 
   return (
-    <div className="w-full p-8 space-y-10 max-w-7xl mx-auto">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-emerald-500">
-          <div className="flex justify-between items-center text-emerald-600 mb-2 font-black uppercase text-[10px] tracking-widest">
+    <div className="w-full p-4 space-y-6 max-w-6xl mx-auto font-sans bg-slate-50 min-h-[calc(100vh-64px)]">
+      {/* Header Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white p-5 rounded-2xl shadow-sm border-b-4 border-emerald-500">
+          <div className="flex justify-between items-center text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">
             <span>Net Receivable</span>
-            <TrendingUp size={16} />
+            <TrendingUp size={14} />
           </div>
-          <p className="text-3xl font-black text-slate-900">₹{(stats.totalOwed / 100).toFixed(2)}</p>
+          <p className="text-3xl font-black text-slate-900 tracking-tight">₹{(totalNet / 100).toFixed(2)}</p>
         </div>
-        <button onClick={() => navigate('/users')} className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg flex items-center justify-center gap-3 hover:bg-emerald-600 transition-all group">
-          <UserPlus size={24} className="group-hover:scale-110 transition-transform" />
-          <span className="font-black uppercase tracking-widest text-sm text-center">Register New User</span>
+        <button onClick={() => navigate('/users')} className="bg-slate-900 text-white p-5 rounded-2xl shadow-lg flex items-center justify-center gap-4 hover:bg-emerald-600 transition-all font-black uppercase text-xs tracking-widest">
+          <UserPlus size={20} /> Register User
         </button>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-blue-500 flex items-center justify-center text-slate-400 font-black uppercase text-[10px] tracking-widest text-center">Global Overview</div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
-          <h2 className="text-xl font-black mb-6 uppercase tracking-tight flex items-center gap-2 text-slate-700"><Users className="text-blue-500" size={20} /> Manage Groups</h2>
-          <form onSubmit={handleCreateGroup} className="flex gap-2 mb-8">
-            <input required className="flex-grow bg-gray-50 p-4 rounded-2xl outline-none font-bold" placeholder="New Group Name" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
-            <button className="bg-blue-600 text-white px-6 rounded-2xl font-black uppercase text-xs">Add Group</button>
-          </form>
-          <div className="grid gap-3">
-            {groups.map(g => (
-              <div key={g.id} className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center group border border-transparent hover:border-blue-200 transition-all shadow-sm">
-                <Link to={`/groups/${g.id}`} className="font-black text-sm text-slate-800 uppercase tracking-tight flex-grow cursor-pointer">{g.name}</Link>
-                <div className="flex items-center gap-4">
-                  <button onClick={() => handleDeleteGroup(g.id, g.name)} className="text-rose-300 hover:text-rose-600 transition-colors cursor-pointer p-1"><Trash2 size={18}/></button>
-                  {/* Arrow Link Fixed Here */}
-                  <Link to={`/groups/${g.id}`} className="text-blue-300 hover:text-blue-600 p-1 transform group-hover:translate-x-1 transition-all cursor-pointer">
-                    <ArrowRight size={22}/>
-                  </Link>
-                </div>
-              </div>
-            ))}
+      {/* Manage Groups */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+            <Users className="text-blue-500" size={20} /> Manage Groups
+          </h2>
+          <div className="flex gap-2 max-w-md w-full">
+            <input className="flex-grow bg-slate-50 p-3 rounded-xl outline-none font-bold text-sm border-2 border-transparent focus:border-blue-500" 
+              placeholder="New Group Name" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
+            <button onClick={() => setShowCreateBox(true)} className="bg-blue-600 text-white px-6 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md">Add Group</button>
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
-          <h2 className="text-xl font-black mb-6 uppercase tracking-tight flex items-center gap-2 text-slate-700"><Clock className="text-orange-500" size={20} /> Recent Settlements</h2>
-          <div className="space-y-3">
-            {settlements.map((s, i) => (
-              <div key={i} className="flex justify-between items-center p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-                <div className="flex flex-col">
-                  <p className="text-[11px] font-bold text-slate-700 uppercase"><span className="text-emerald-600">{getName(s.payer_id)}</span> paid {getName(s.payee_id)}</p>
-                  <p className="text-[9px] text-gray-400 font-bold uppercase">{new Date(s.created_at).toLocaleDateString()}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-emerald-600">₹{(s.amount / 100).toFixed(2)}</span>
-                  <CheckCircle size={14} className="text-emerald-500" />
-                </div>
+        <div className="grid gap-3 max-h-[50vh] overflow-y-auto pr-2">
+          {groups.map(g => (
+            <div key={g.id} className="p-4 bg-slate-50/50 rounded-2xl flex justify-between items-center group hover:bg-white border border-transparent hover:border-blue-100 transition-all">
+              <Link to={`/groups/${g.id}`} className="flex flex-col flex-grow">
+                <span className="font-black text-base text-slate-800 uppercase tracking-tight">{g.name}</span>
+                <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest mt-2 bg-blue-50 w-fit px-2 py-0.5 rounded">
+                  {g.mode || 'PAIRWISE'}
+                </span>
+              </Link>
+              <div className="flex items-center gap-4">
+                {/* Delete button restored here */}
+                <button onClick={() => openDeleteModal(g.id, g.name)} className="text-rose-200 hover:text-rose-500 p-2 rounded-full hover:bg-rose-50 transition-all">
+                  <Trash2 size={18} />
+                </button>
+                <Link to={`/groups/${g.id}`} className="text-blue-200 hover:text-blue-500 transform group-hover:translate-x-1 transition-all">
+                  <ArrowRight size={24} strokeWidth={2.5} />
+                </Link>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* Mode Selection Box */}
+      {showCreateBox && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+          <div className="bg-white rounded-[2rem] w-full max-w-sm shadow-2xl p-8 animate-in zoom-in-95">
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Split Logic</h3>
+                <button onClick={() => setShowCreateBox(false)}><X size={20} className="text-slate-300 hover:text-slate-500"/></button>
+              </div>
+              <div className="grid gap-3">
+                <button onClick={() => setSelectedMode('PAIRWISE')} className={`p-4 rounded-xl border-2 text-left transition-all ${selectedMode === 'PAIRWISE' ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-50'}`}>
+                  <p className="font-black text-[10px] uppercase mb-1">Pairwise Mode</p>
+                  <p className="text-[9px] text-slate-500 font-bold italic leading-tight">Direct tracking.</p>
+                </button>
+                <button onClick={() => setSelectedMode('SIMPLIFY')} className={`p-4 rounded-xl border-2 text-left transition-all ${selectedMode === 'SIMPLIFY' ? 'border-emerald-500 bg-emerald-50 shadow-sm' : 'border-slate-50'}`}>
+                  <p className="font-black text-[10px] uppercase mb-1">Simplify Mode</p>
+                  <p className="text-[9px] text-slate-500 font-bold italic leading-tight">Minimized transfers.</p>
+                </button>
+              </div>
+              <button onClick={handleCreateGroup} className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">Confirm & Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Logic Box */}
+      {deleteModal.show && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+          <div className="bg-white rounded-[2rem] w-full max-w-sm shadow-2xl p-8 animate-in zoom-in-95 text-center space-y-6">
+            <div className={`mx-auto w-14 h-14 rounded-full flex items-center justify-center ${deleteModal.canDelete ? 'bg-amber-50 text-amber-500' : 'bg-rose-50 text-rose-500'}`}>
+              <AlertCircle size={28} />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-slate-800 uppercase mb-2">{deleteModal.canDelete ? 'Confirm Delete' : 'Dues Pending'}</h3>
+              <p className="text-[11px] text-slate-500 font-bold leading-relaxed">{deleteModal.canDelete ? `Delete group "${deleteModal.name}"?` : `Cannot delete "${deleteModal.name}": Some settlements are in due.`}</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteModal({show:false})} className="flex-1 py-3.5 text-slate-400 font-black uppercase text-[10px] tracking-widest bg-slate-50 rounded-xl">Cancel</button>
+              {deleteModal.canDelete && <button onClick={async () => { await api.delete(`/groups/${deleteModal.gid}`); fetchData(); setDeleteModal({show:false}); }} className="flex-1 py-3.5 bg-rose-500 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg">Delete</button>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

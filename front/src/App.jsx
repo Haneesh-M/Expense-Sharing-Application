@@ -7,13 +7,12 @@ import UserManagement from './pages/UserManagement';
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="flex flex-col min-h-screen w-screen bg-gray-50 overflow-x-hidden m-0 p-0 font-sans">
+      <div className="flex flex-col min-h-screen w-screen bg-slate-50 overflow-x-hidden m-0 p-0 font-sans">
         <Navbar />
         <main className="flex-grow w-full">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/users" element={<UserManagement />} />
-            {/* The :id parameter is critical for capturing group IDs from the DB */}
             <Route path="/groups/:id" element={<GroupDetails />} />
           </Routes>
         </main>

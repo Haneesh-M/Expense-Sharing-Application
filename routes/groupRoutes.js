@@ -13,6 +13,11 @@ router.post('/:id/users', (req, res) => {
   catch(e) { res.status(400).json({ error: e.message }); }
 });
 
+router.post('/', (req, res) => {
+  // Pass both name and mode from req.body
+  res.json(GroupService.create(req.body.name, req.body.mode)); 
+});
+
 router.get('/:id/history', (req, res) => res.json(GroupService.getHistory(req.params.id)));
 
 router.get('/:id/balances', (req, res) => {
