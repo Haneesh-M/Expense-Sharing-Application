@@ -1,10 +1,14 @@
 const Database = require('better-sqlite3');
+const path = require('path');
 
-const db = new Database('finance.db');
-// const db = new Database(':memory:');
+// This places the DB file inside the 'config' folder
+const dbPath = path.join(__dirname, 'finance.db');
+const db = new Database(dbPath); 
 
+// Enable Foreign Keys for data integrity
 db.pragma('foreign_keys = ON');
 
+// Initialize Schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,8 +24,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS group_members (
     group_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
-    FOREIGN KEY (group_id) REFERENCES groups(id),
-    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (group_id, user_id)
   );
 
@@ -29,19 +33,19 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER NOT NULL,
     payer_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL, -- Stored in PAISE
+    amount INTEGER NOT NULL, -- Stored in Paise (₹1 = 100)
     description TEXT,
     split_type TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (group_id) REFERENCES groups(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
     FOREIGN KEY (payer_id) REFERENCES users(id)
   );
 
   CREATE TABLE IF NOT EXISTS expense_splits (
     expense_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL, -- Stored in PAISE
-    FOREIGN KEY (expense_id) REFERENCES expenses(id),
+    amount INTEGER NOT NULL,
+    FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
@@ -50,9 +54,9 @@ db.exec(`
     group_id INTEGER NOT NULL,
     payer_id INTEGER NOT NULL,
     payee_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL, -- Stored in PAISE
+    amount INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (group_id) REFERENCES groups(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
     FOREIGN KEY (payer_id) REFERENCES users(id),
     FOREIGN KEY (payee_id) REFERENCES users(id)
   );

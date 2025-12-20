@@ -2,65 +2,97 @@ const Expense = require('../models/Expense');
 const Settlement = require('../models/Settlement');
 
 class BalanceService {
-  static getGroupBalances(groupId) {
+  static getBalances(groupId, mode = 'PAIRWISE') {
     const expenses = Expense.findByGroupId(groupId);
     const settlements = Settlement.findByGroupId(groupId);
     
-    const balances = {}; // balances[from][to] = amount
+    // 1. Calculate Net Balances
+    const net = {}; 
+    const update = (uid, amt) => net[uid] = (net[uid] || 0) + amt;
 
-    const ensureEntry = (u1, u2) => {
-      if (!balances[u1]) balances[u1] = {};
-      if (!balances[u1][u2]) balances[u1][u2] = 0;
-    };
-
-    // 1. Process Expenses
-    expenses.forEach(exp => {
-      const payer = exp.payer_id;
-      exp.splits.forEach(split => {
-        const debtor = split.user_id;
-        if (debtor !== payer) {
-          ensureEntry(debtor, payer);
-          balances[debtor][payer] += split.amount;
+    expenses.forEach(e => {
+      e.splits.forEach(s => {
+        if (s.user_id !== e.payer_id) {
+          update(s.user_id, -s.amount); // Debtor loses
+          update(e.payer_id, s.amount); // Payer gains
         }
       });
     });
 
-    // 2. Process Settlements
-    settlements.forEach(settle => {
-      ensureEntry(settle.payer_id, settle.payee_id);
-      balances[settle.payer_id][settle.payee_id] -= settle.amount;
+    settlements.forEach(s => {
+      update(s.payer_id, s.amount); // Payer cleared debt
+      update(s.payee_id, -s.amount); // Payee received
     });
 
-    // 3. Pairwise Netting (PhonePe Style)
-    const simplified = [];
-    const processedPairs = new Set();
-
-    Object.keys(balances).forEach(userA => {
-      Object.keys(balances[userA]).forEach(userB => {
-        const pairKey = [userA, userB].sort().join('-');
-        if (processedPairs.has(pairKey)) return;
-
-        const uA = parseInt(userA);
-        const uB = parseInt(userB);
-
-        let debtAB = balances[uA]?.[uB] || 0;
-        let debtBA = balances[uB]?.[uA] || 0;
-
-        if (debtAB > debtBA) {
-          simplified.push({ from: uA, to: uB, amount: debtAB - debtBA });
-        } else if (debtBA > debtAB) {
-          simplified.push({ from: uB, to: uA, amount: debtBA - debtAB });
-        }
-        
-        processedPairs.add(pairKey);
-      });
-    });
-
-    return simplified;
+    if (mode === 'SIMPLIFY') return this.simplifyGraph(net);
+    return this.pairwiseNetting(expenses, settlements);
   }
 
-  static settleBalance(groupId, payerId, payeeId, amount) {
-    return Settlement.create(groupId, payerId, payeeId, amount);
+  // PHONEPE STYLE: Keep A->B distinct from B->C
+  static pairwiseNetting(expenses, settlements) {
+    const balances = {}; // [from][to] = amount
+    const ensure = (u1, u2) => { if (!balances[u1]) balances[u1]={}; if(!balances[u1][u2]) balances[u1][u2]=0; };
+
+    expenses.forEach(e => e.splits.forEach(s => {
+      if (s.user_id !== e.payer_id) {
+        ensure(s.user_id, e.payer_id);
+        balances[s.user_id][e.payer_id] += s.amount;
+      }
+    }));
+
+    settlements.forEach(s => {
+      ensure(s.payer_id, s.payee_id);
+      balances[s.payer_id][s.payee_id] -= s.amount;
+    });
+
+    const result = [];
+    const seen = new Set();
+    
+    Object.keys(balances).forEach(a => {
+      Object.keys(balances[a]).forEach(b => {
+        const key = [a, b].sort().join('-');
+        if (seen.has(key)) return;
+        
+        const debtAB = balances[a]?.[b] || 0;
+        const debtBA = balances[b]?.[a] || 0;
+        const net = debtAB - debtBA;
+
+        if (net > 0) result.push({ from: +a, to: +b, amount: net });
+        else if (net < 0) result.push({ from: +b, to: +a, amount: -net });
+        
+        seen.add(key);
+      });
+    });
+    return result;
+  }
+
+  // SPLITWISE STYLE: Minimize transaction count
+  static simplifyGraph(netBalances) {
+    let debtors = [], creditors = [];
+    Object.entries(netBalances).forEach(([id, amt]) => {
+      if (amt < -1) debtors.push({ id: +id, amount: amt });
+      else if (amt > 1) creditors.push({ id: +id, amount: amt });
+    });
+
+    debtors.sort((a, b) => a.amount - b.amount);
+    creditors.sort((a, b) => b.amount - a.amount);
+
+    const result = [];
+    let i = 0, j = 0;
+
+    while (i < debtors.length && j < creditors.length) {
+      let d = debtors[i], c = creditors[j];
+      let amt = Math.min(Math.abs(d.amount), c.amount);
+
+      result.push({ from: d.id, to: c.id, amount: amt });
+
+      d.amount += amt;
+      c.amount -= amt;
+
+      if (Math.abs(d.amount) < 1) i++;
+      if (c.amount < 1) j++;
+    }
+    return result;
   }
 }
 

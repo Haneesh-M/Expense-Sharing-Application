@@ -22,16 +22,25 @@ class Expense {
       }
       return expenseId;
     });
-
     return tx();
   }
 
   static findByGroupId(groupId) {
-    const expenses = db.prepare('SELECT * FROM expenses WHERE group_id = ?').all(groupId);
+    const expenses = db.prepare('SELECT * FROM expenses WHERE group_id = ? ORDER BY created_at DESC').all(groupId);
+    const splitQuery = db.prepare('SELECT user_id, amount FROM expense_splits WHERE expense_id = ?');
+    
     for (const exp of expenses) {
-      exp.splits = db.prepare('SELECT user_id, amount FROM expense_splits WHERE expense_id = ?').all(exp.id);
+      exp.splits = splitQuery.all(exp.id);
     }
     return expenses;
+  }
+
+  static delete(id) {
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM expense_splits WHERE expense_id = ?').run(id);
+      db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    });
+    return tx();
   }
 }
 
