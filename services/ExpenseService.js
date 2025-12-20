@@ -20,10 +20,19 @@ class ExpenseService {
       targets.forEach((uid, i) => splits.push({ userId: uid, amount: base + (i < rem ? 1 : 0) }));
     } 
     else if (splitType === 'EXACT') {
-      splits = splitDetails;
-      calcTotal = splits.reduce((sum, s) => sum + s.value, 0);
-      if (calcTotal !== amount) throw new Error("Split amounts do not match total");
-      splits = splits.map(s => ({ userId: s.userId, amount: s.value }));
+      let calcTotalPaise = 0;
+      
+      splits = splitDetails.map(s => {
+        // Convert the user input value to Paise immediately
+        const userAmountInPaise = Math.round(parseFloat(s.value) * 100);
+        calcTotalPaise += userAmountInPaise;
+        return { userId: s.userId, amount: userAmountInPaise };
+      });
+
+      // Compare Paise to Paise
+      if (calcTotalPaise !== amount) {
+        throw new Error(`Split total (₹${calcTotalPaise/100}) does not match expense total (₹${amount/100})`);
+      }
     }
     else if (splitType === 'PERCENT') {
       let runningTotal = 0;
